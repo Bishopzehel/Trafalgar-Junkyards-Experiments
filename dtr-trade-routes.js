@@ -8,8 +8,8 @@
   const rows=b=>Array.isArray(b?.shop_items??b?.shopItems??b?.goods)?(b.shop_items??b.shopItems??b.goods):[];
   const nm=i=>String(i?.name??i?.good_name??i?.commodity_name??i?.nickname??i?.good??'Unknown');
   const key=i=>n(nm(i));
-  const buys=i=>num(i?.sell_price??i?.price_to_sell_to_base??i?.price_sell);
-  const sells=i=>num(i?.price??i?.price_to_buy_from_base??i?.buy_price??i?.price_buy);
+  const buys=i=>i?.price_base_buys_for!==undefined?num(i.price_base_buys_for):num(i?.sell_price??i?.price_to_sell_to_base??i?.price_sell);
+  const sells=i=>i?.price_base_sells_for!==undefined?(i?.base_sells===false?null:num(i.price_base_sells_for)):num(i?.price??i?.price_to_buy_from_base??i?.buy_price??i?.price_buy);
   const q=i=>num(i?.quantity??i?.amount??i?.stock);
   const bn=b=>String(b?.display_name??b?.name??b?.base_name??b?.nickname??'Unknown base');
   const loc=b=>[b?.region_name??b?.region,b?.system_name??b?.system].filter(Boolean).join(' / ')||'Location not reported';
@@ -24,8 +24,8 @@
   frame.insertBefore(panel,document.getElementById('errorView')||null);
   let host=null,market=[],selected='',status='LOADING MARKET',times=new Map(),serial=0;
   const opts=()=>{const m=new Map();rows(host||{}).forEach(i=>{if(key(i)&&!m.has(key(i)))m.set(key(i),{key:key(i),label:nm(i),item:i});});return [...m.values()].sort((a,b)=>a.label.localeCompare(b.label));};
-  const hostFrom=s=>s?.bases instanceof Map&&s.bases.get('trafalgar-junkyards')||((s?.data||[]).find(b=>n([b?.name,b?.nickname,b?.base_name,b?.display_name].join(' ')).includes('trafalgar junkyards'))||null);
-  const enc=b=>{const raw=String(b?.nickname??b?.base_name??b?.name??'');try{return btoa(unescape(encodeURIComponent(raw)));}catch{return raw;}};
+  const hostFrom=s=>{const found=s?.bases instanceof Map&&s.bases.get('trafalgar-junkyards')||((s?.data||[]).find(b=>n([b?.name,b?.nickname,b?.base_name,b?.display_name].join(' ')).includes('trafalgar junkyards'))||null);return found?{...found,_dtrPob:true}:null;};
+  const enc=b=>{const raw=String(b?.nickname??b?.base_name??b?.name??'');if(!b?._dtrPob)return raw;try{return btoa(unescape(encodeURIComponent(raw)));}catch{return raw;}};
   function paint(){
     const select=panel.querySelector('#tradeCommodity'), results=panel.querySelector('#tradeResults'), statusNode=panel.querySelector('#tradeStatus');
     const options=opts(); if(!options.some(o=>o.key===selected))selected=options[0]?.key||'';
@@ -55,8 +55,26 @@
   }
   async function refresh(){
     const id=++serial;status='REFRESHING MARKET…';paint();
-    try{const r=await fetch(API+'/pobs',{cache:'no-store',signal:AbortSignal.timeout(18000)});if(!r.ok)throw Error('HTTP '+r.status);const data=await r.json();if(id!==serial)return;market=Array.isArray(data)?data:(data.pobs||data.data||[]);times.clear();status='MARKET UPDATED // '+market.length+' POBS';paint();void loadTimes();}
-    catch(e){if(id!==serial)return;status='MARKET FEED UNAVAILABLE';paint();}
+    try{
+      const [pobResponse,baseResponse]=await Promise.all([fetch(API+'/pobs',{cache:'no-store',signal:AbortSignal.timeout(18000)}),fetch(API+'/bases',{cache:'no-store',signal:AbortSignal.timeout(18000)})]);
+      if(!pobResponse.ok)throw Error('POB market HTTP '+pobResponse.status);
+      const pobData=await pobResponse.json(), pobs=(Array.isArray(pobData)?pobData:(pobData.pobs||pobData.data||[])).map(b=>({...b,_dtrPob:true}));
+      let npc=[];
+      if(baseResponse.ok){
+        const baseData=await baseResponse.json(), allBases=Array.isArray(baseData)?baseData:(baseData.bases||baseData.data||[]);
+        const candidates=allBases.filter(b=>b?.is_pob!==true&&b?.is_pob!==1&&b?.is_pob!=='true'&&b?.nickname);
+        for(let i=0;i<candidates.length;i+=150){
+          const chunk=candidates.slice(i,i+150), rr=await fetch(API+'/npc_bases/market_goods',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(chunk.map(b=>b.nickname)),signal:AbortSignal.timeout(18000)});
+          if(!rr.ok)continue;const answers=await rr.json();
+          (Array.isArray(answers)?answers:[]).forEach(answer=>{
+            const meta=chunk.find(b=>String(b.nickname)===String(answer.nickname));if(!meta)return;
+            const goods=Array.isArray(answer.market_goods)?answer.market_goods:[];
+            npc.push({...meta,shop_items:goods.map(g=>({...g,name:g.name??g.good_name??g.nickname,base_sells:g.base_sells,price_base_buys_for:g.price_base_buys_for,price_base_sells_for:g.price_base_sells_for}))});
+          });
+        }
+      }
+      if(id!==serial)return;market=[...pobs,...npc];times.clear();status='MARKET UPDATED // '+pobs.length+' POBS + '+npc.length+' NPC BASES';paint();void loadTimes();
+    }catch(e){if(id!==serial)return;status='NPC FEED UNAVAILABLE // USING POB QUOTES';try{const r=await fetch(API+'/pobs',{cache:'no-store',signal:AbortSignal.timeout(18000)});const data=await r.json();market=(Array.isArray(data)?data:(data.pobs||data.data||[])).map(b=>({...b,_dtrPob:true}));paint();void loadTimes();}catch{market=[];paint();}}
   }
   function sync(){const s=window.DTRApp?.getState?.();if(!s)return;host=hostFrom(s);if(Array.isArray(s.data)&&s.data.length){market=s.data;status='LIVE FEED // '+market.length+' POBS';}paint();}
   tabs.addEventListener('click',e=>{const tab=e.target.closest('.tab[data-view="trade-routes"]');if(!tab)return;document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='tradeRoutesView');tabs.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b===tab));sync();if(!market.length)void refresh();});
