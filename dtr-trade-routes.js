@@ -20,9 +20,9 @@
   document.head.append(css);
   if(!tabs.querySelector('[data-view="trade-routes"]')){const b=document.createElement('button');b.className='tab';b.type='button';b.dataset.view='trade-routes';b.innerHTML='<span>04</span>TRADE ROUTES';tabs.append(b);}
   const panel=document.createElement('section');panel.id='tradeRoutesView';panel.className='view trade-routes';panel.hidden=true;
-  panel.innerHTML='<header class="trade-routes-head"><p class="section-kicker">TRAFALGAR JUNKYARDS // MARKET INTELLIGENCE</p><h2>Trade Route Finder</h2><p>Price comparisons for commodities stocked at Trafalgar across player-owned bases in the live Darkstat feed.</p></header><div class="trade-controls"><label>COMMODITY IN TRAFALGAR STOCK<select id="tradeCommodity"></select></label><button id="tradeRefresh" type="button">REFRESH MARKET</button><span class="trade-status" id="tradeStatus" role="status"></span></div><div class="trade-legend"><b>BASE BUYS</b> = what the base pays you. &nbsp; <b>BASE SELLS</b> = what you pay. Margin is per unit before costs; travel time is Freighter estimate if Darkstat returns it.</div><div id="tradeResults"></div>';
+  panel.innerHTML='<header class="trade-routes-head"><p class="section-kicker">TRAFALGAR JUNKYARDS // MARKET INTELLIGENCE</p><h2>Trade Route Finder</h2><p>Price comparisons for commodities stocked at Trafalgar across NPC bases and player-owned bases in the live Darkstat feed.</p></header><div class="trade-controls"><label>COMMODITY IN TRAFALGAR STOCK<select id="tradeCommodity"></select></label><button id="tradeRefresh" type="button">REFRESH MARKET</button><span class="trade-status" id="tradeStatus" role="status"></span></div><div class="trade-legend"><b>BASE BUYS</b> = what the base pays you. &nbsp; <b>BASE SELLS</b> = what you pay. Margin is per unit before costs; travel time is Freighter estimate if Darkstat returns it.</div><div id="tradeResults"></div>';
   frame.insertBefore(panel,document.getElementById('errorView')||null);
-  let host=null,market=[],selected='',status='LOADING MARKET',times=new Map(),serial=0;
+  let host=null,market=[],selected='',status='LOADING MARKET',times=new Map(),serial=0,marketLoaded=false;
   const opts=()=>{const m=new Map();rows(host||{}).forEach(i=>{if(key(i)&&!m.has(key(i)))m.set(key(i),{key:key(i),label:nm(i),item:i});});return [...m.values()].sort((a,b)=>a.label.localeCompare(b.label));};
   const hostFrom=s=>{const found=s?.bases instanceof Map&&s.bases.get('trafalgar-junkyards')||((s?.data||[]).find(b=>n([b?.name,b?.nickname,b?.base_name,b?.display_name].join(' ')).includes('trafalgar junkyards'))||null);return found?{...found,_dtrPob:true}:null;};
   const enc=b=>{const raw=String(b?.nickname??b?.base_name??b?.name??'');if(!b?._dtrPob)return raw;try{return btoa(unescape(encodeURIComponent(raw)));}catch{return raw;}};
@@ -73,10 +73,10 @@
           });
         }
       }
-      if(id!==serial)return;market=[...pobs,...npc];times.clear();status='MARKET UPDATED // '+pobs.length+' POBS + '+npc.length+' NPC BASES';paint();void loadTimes();
-    }catch(e){if(id!==serial)return;status='NPC FEED UNAVAILABLE // USING POB QUOTES';try{const r=await fetch(API+'/pobs',{cache:'no-store',signal:AbortSignal.timeout(18000)});const data=await r.json();market=(Array.isArray(data)?data:(data.pobs||data.data||[])).map(b=>({...b,_dtrPob:true}));paint();void loadTimes();}catch{market=[];paint();}}
+      if(id!==serial)return;market=[...pobs,...npc];marketLoaded=true;times.clear();status='MARKET UPDATED // '+pobs.length+' POBS + '+npc.length+' NPC BASES';paint();void loadTimes();
+    }catch(e){if(id!==serial)return;status='NPC FEED UNAVAILABLE // USING POB QUOTES';try{const r=await fetch(API+'/pobs',{cache:'no-store',signal:AbortSignal.timeout(18000)});const data=await r.json();market=(Array.isArray(data)?data:(data.pobs||data.data||[])).map(b=>({...b,_dtrPob:true}));marketLoaded=true;paint();void loadTimes();}catch{market=[];paint();}}
   }
-  function sync(){const s=window.DTRApp?.getState?.();if(!s)return;host=hostFrom(s);if(Array.isArray(s.data)&&s.data.length){market=s.data;status='LIVE FEED // '+market.length+' POBS';}paint();}
+  function sync(){const s=window.DTRApp?.getState?.();if(!s)return;host=hostFrom(s);if(!marketLoaded&&Array.isArray(s.data)&&s.data.length){market=s.data;status='LIVE FEED // '+market.length+' POBS';}paint();}
   tabs.addEventListener('click',e=>{const tab=e.target.closest('.tab[data-view="trade-routes"]');if(!tab)return;document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='tradeRoutesView');tabs.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b===tab));sync();if(!market.length)void refresh();});
   panel.querySelector('#tradeCommodity').addEventListener('change',e=>{selected=e.target.value;paint();});
   panel.querySelector('#tradeRefresh').addEventListener('click',()=>{sync();void refresh();});
