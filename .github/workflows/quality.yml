@@ -1,0 +1,39 @@
+name: DTR quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  static-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check JavaScript syntax
+        shell: bash
+        run: |
+          for file in ./*.js ./tests/*.mjs ./scripts/*.mjs; do
+            node --check "$file"
+          done
+      - name: Run static quality audit
+        run: node tests/static-audit.mjs
+      - name: Run calculator runtime audit
+        run: node tests/calculator-runtime.mjs
+      - name: Run production runtime audit
+        run: node tests/production-runtime.mjs
+      - name: Run forum composer runtime audit
+        run: node tests/forum-runtime.mjs
+      - name: Run shipyard runtime audit
+        run: node tests/shipyard-runtime.mjs
+      - name: Run price-direction runtime audit
+        run: node tests/procurement-runtime.mjs
