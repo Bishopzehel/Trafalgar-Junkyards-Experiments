@@ -49,8 +49,7 @@
       market.forEach(b=>{
         const good=rows(b).find(x=>key(x)===item.key);
         if(!good)return;
-        const buyFromBase=sells(good), sellToBase=buys(good);
-        quotes.push({base:b,good,buyFromBase,sellToBase,stock:q(good)});
+        quotes.push({base:b,buyFromBase:sells(good),sellToBase:buys(good),stock:q(good)});
       });
       const routes=[];
       quotes.forEach(from=>{
@@ -61,18 +60,17 @@
         });
       });
       routes.sort((a,b)=>b.margin-a.margin);
-      const profitable=routes.filter(x=>x.margin>0);
-      const ranked=profitable.length?profitable:routes;
-      const limit=selected==='all'?3:40;
-      if(!ranked.length)out.push({commodity:item.label,unavailable:true});
+      const available=routes.filter(x=>x.stock===null||x.stock>0);
+      const profitable=available.filter(x=>x.margin>0);
+      const ranked=profitable.length?profitable:available;
+      const limit=selected==='all'?1:40;
+      if(!ranked.length)out.push({commodity:item.label,unavailable:true,reason:routes.length?'No source base reports stock above zero.':'No matching two-sided prices are available.'});
       else out.push(...ranked.slice(0,limit));
     });
-    out.sort((a,b)=>b.margin-a.margin);
+    out.sort((a,b)=>(b.margin??-Infinity)-(a.margin??-Infinity));
     if(!out.length){results.innerHTML='<div class="trade-empty">Market records are present, but no commodity has a matching buy-at and sell-to price pair yet.</div>';return;}
-    const timeText=()=> 'Not reported';
-    results.innerHTML='<div class="trade-empty">'+(selected==='all'?'Showing up to three strongest routes for each commodity. Select one commodity to see more route comparisons.':'Showing up to 40 route comparisons for this commodity.')+' A route buys where BASE SELLS and sells where BASE BUYS; margin is per unit before travel and other costs. Recorded stock is shown for the source base.</div><div class="trade-wrap"><table class="trade-table"><thead><tr><th>COMMODITY</th><th>ROUTE / LOCATION</th><th>BUY AT</th><th>SELL TO</th><th>BUY PRICE</th><th>SELL PRICE</th><th>STOCK AT SOURCE</th><th>MARGIN / UNIT</th><th>FREIGHTER</th></tr></thead><tbody>'+out.map(x=>x.unavailable?'<tr><td><strong>'+esc(x.commodity)+'</strong></td><td colspan="8" class="trade-empty">No matching two-sided price quotes are available in the current market feed.</td></tr>':'<tr><td><strong>'+esc(x.commodity)+'</strong></td><td><strong>'+esc(bn(x.from))+' → '+esc(bn(x.to))+'</strong><small>'+esc(loc(x.from))+' → '+esc(loc(x.to))+'</small></td><td><strong>'+esc(bn(x.from))+'</strong><small>BASE SELLS</small></td><td><strong>'+esc(bn(x.to))+'</strong><small>BASE BUYS</small></td><td>'+money(x.buy)+'</td><td>'+money(x.sell)+'</td><td>'+(x.stock===null?'—':x.stock.toLocaleString('en-GB'))+'</td><td><strong class="trade-margin">'+(x.margin>0?'+':'')+money(x.margin)+'</strong><small>per unit before costs</small></td><td>'+timeText()+'</td></tr>').join('')+'</tbody></table></div>';
+    results.innerHTML='<div class="trade-empty">'+(selected==='all'?'Showing the best available route for every commodity. Select a commodity to see up to 40 comparisons.':'Showing up to 40 comparisons for this commodity.')+' A route buys where BASE SELLS and sells where BASE BUYS. Margin is per unit before travel and other costs; stock at the source is shown. Routes with zero recorded source stock are excluded.</div><div class="trade-wrap"><table class="trade-table"><thead><tr><th>COMMODITY</th><th>ROUTE / LOCATION</th><th>BUY AT</th><th>SELL TO</th><th>BUY PRICE</th><th>SELL PRICE</th><th>STOCK AT SOURCE</th><th>MARGIN / UNIT</th></tr></thead><tbody>'+out.map(x=>x.unavailable?'<tr><td><strong>'+esc(x.commodity)+'</strong></td><td colspan="7" class="trade-empty">'+esc(x.reason)+'</td></tr>':'<tr><td><strong>'+esc(x.commodity)+'</strong></td><td><strong>'+esc(bn(x.from))+' → '+esc(bn(x.to))+'</strong><small>'+esc(loc(x.from))+' → '+esc(loc(x.to))+'</small></td><td><strong>'+esc(bn(x.from))+'</strong><small>BASE SELLS</small></td><td><strong>'+esc(bn(x.to))+'</strong><small>BASE BUYS</small></td><td>'+money(x.buy)+'</td><td>'+money(x.sell)+'</td><td>'+(x.stock===null?'—':x.stock.toLocaleString('en-GB'))+'</td><td><strong class="trade-margin">'+(x.margin>0?'+':'')+money(x.margin)+'</strong><small>per unit before costs</small></td></tr>').join('')+'</tbody></table></div>';
   }
-  async function loadTimes(){}
   async function refresh(){
     const id=++serial;status='REFRESHING MARKET…';paint();
     try{
@@ -93,7 +91,7 @@
           });
         }
       }
-      if(id!==serial)return;market=[...pobs,...npc];marketLoaded=true;times.clear();status='MARKET UPDATED // '+market.length+' MARKETS';paint();
+      if(id!==serial)return;market=[...pobs,...npc];marketLoaded=true;times.clear();status='MARKET UPDATED // '+pobs.length+' POBS + '+npc.length+' NPC BASES // '+opts().length+' COMMODITIES';paint();
     }catch(e){if(id!==serial)return;status='NPC FEED UNAVAILABLE // USING POB QUOTES';try{const r=await fetch(API+'/pobs',{cache:'no-store',signal:AbortSignal.timeout(18000)});const data=await r.json();market=(Array.isArray(data)?data:(data.pobs||data.data||[])).map(b=>({...b,_dtrPob:true}));marketLoaded=true;paint();}catch{market=[];paint();}}
   }
   function sync(){const s=window.DTRApp?.getState?.();if(!s)return;host=hostFrom(s);if(!marketLoaded&&Array.isArray(s.data)&&s.data.length){market=s.data;status='LIVE FEED // '+market.length+' POBS';}paint();}
