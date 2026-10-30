@@ -113,8 +113,8 @@
       if(id!==serial)return;market=[...pobs,...npc];buildMarketIndex();marketLoaded=true;times.clear();status='MARKET UPDATED // '+pobs.length+' POBS + '+npc.length+' NPC BASES // '+opts().length+' COMMODITIES';paint();
     }catch(e){if(id!==serial)return;status='NPC FEED UNAVAILABLE // USING POB QUOTES';try{const r=await fetch(API+'/pobs',{cache:'no-store',signal:AbortSignal.timeout(18000)});const data=await r.json();market=(Array.isArray(data)?data:(data.pobs||data.data||[])).map(b=>({...b,_dtrPob:true}));buildMarketIndex();marketLoaded=true;paint();}catch{market=[];paint();}}
   }
-  function sync(){const s=window.DTRApp?.getState?.();if(!s)return;host=hostFrom(s);if(!marketLoaded&&Array.isArray(s.data)&&s.data.length){market=s.data;buildMarketIndex();status='LIVE FEED // '+market.length+' POBS';}paint();}
-  tabs.addEventListener('click',e=>{const tab=e.target.closest('.tab[data-view="trade-routes"]');if(!tab)return;document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='tradeRoutesView');tabs.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b===tab));sync();if(!market.length)void refresh();});
+  function sync(){const s=window.DTRApp?.getState?.();if(!s)return;host=hostFrom(s);if(!marketLoaded&&Array.isArray(s.data)&&s.data.length){market=s.data;buildMarketIndex();status='LIVE FEED // '+market.length+' POBS';}if(!panel.hidden)paint();}
+  tabs.addEventListener('click',e=>{const tab=e.target.closest('.tab[data-view="trade-routes"]');if(!tab)return;document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='tradeRoutesView');tabs.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b===tab));sync();if(!marketLoaded)void refresh();});
   panel.querySelector('#tradeCommodity').addEventListener('change',e=>{selected=e.target.value;selectedSource='';selectedDestination='';paint();});
   panel.querySelector('#tradeCommoditySearch').addEventListener('input',paint);
   panel.querySelector('#tradeBaseSearch').addEventListener('input',paint);
