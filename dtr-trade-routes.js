@@ -22,15 +22,19 @@
   const panel=document.createElement('section');panel.id='tradeRoutesView';panel.className='view trade-routes';panel.hidden=true;
   panel.innerHTML='<header class="trade-routes-head"><p class="section-kicker">TRAFALGAR JUNKYARDS // MARKET INTELLIGENCE</p><h2>Trade Route Finder</h2><p>Compare live prices across NPC and player-owned markets. Select a commodity to inspect every quoted base, choose where to buy and sell, and see the estimated per-unit margin.</p></header><div class="trade-controls"><label>SELECT COMMODITY<select id="tradeCommodity"></select></label><label>SEARCH COMMODITY<input id="tradeCommoditySearch" type="search" placeholder="Type commodity name…" autocomplete="off"></label><label>DESIRED BASE<input id="tradeBaseSearch" type="search" placeholder="Search buy or sell base…" autocomplete="off"></label><button id="tradeRefresh" type="button">REFRESH MARKET</button><span class="trade-status" id="tradeStatus" role="status"></span></div><div class="trade-legend"><b>BASE BUYS</b> = what the base pays you. &nbsp; <b>BASE SELLS</b> = what you pay. Margin is per unit before costs; travel time is Freighter estimate if Darkstat returns it.</div><div id="tradeResults"></div>';
   frame.insertBefore(panel,document.getElementById('errorView')||null);
-  let host=null,market=[],selected='',selectedSource='',selectedDestination='',showAllRoutes=false,status='LOADING MARKET',times=new Map(),serial=0,marketLoaded=false;
-  const opts=()=>{
-    const m=new Map();
-    market.forEach(b=>rows(b).forEach(i=>{
-      const k=key(i);
-      if(k&&!m.has(k))m.set(k,{key:k,label:nm(i)});
+  let host=null,market=[],marketIndex=new Map(),marketOptions=[],selected='',selectedSource='',selectedDestination='',showAllRoutes=false,status='LOADING MARKET',times=new Map(),serial=0,marketLoaded=false;
+  function buildMarketIndex(){
+    const grouped=new Map();
+    market.forEach(base=>rows(base).forEach(item=>{
+      const commodityKey=key(item);
+      if(!commodityKey)return;
+      if(!grouped.has(commodityKey))grouped.set(commodityKey,[]);
+      grouped.get(commodityKey).push({base,buyFromBase:sells(item),sellToBase:buys(item),stock:q(item)});
     }));
-    return [...m.values()].sort((a,b)=>a.label.localeCompare(b.label));
-  };
+    marketIndex=grouped;
+    marketOptions=[...grouped].map(([commodityKey,quotes])=>({key:commodityKey,label:nm(rows(quotes[0].base).find(item=>key(item)===commodityKey))})).sort((a,b)=>a.label.localeCompare(b.label));
+  }
+  const opts=()=>marketOptions;
   const hostFrom=s=>{const found=s?.bases instanceof Map&&s.bases.get('trafalgar-junkyards')||((s?.data||[]).find(b=>n([b?.name,b?.nickname,b?.base_name,b?.display_name].join(' ')).includes('trafalgar junkyards'))||null);return found?{...found,_dtrPob:true}:null;};
   const enc=b=>{const raw=String(b?.nickname??b?.base_name??b?.name??'');if(!b?._dtrPob)return raw;try{return btoa(unescape(encodeURIComponent(raw)));}catch{return raw;}};
   const baseKey=b=>String(b?.nickname??b?.base_name??b?.name??b?.display_name??'').trim().toLowerCase();
@@ -46,8 +50,7 @@
     const commodityQuery=n(panel.querySelector('#tradeCommoditySearch').value), baseQuery=n(panel.querySelector('#tradeBaseSearch').value);
     const chosen=(selected==='all'?options:options.filter(o=>o.key===selected)).filter(o=>!commodityQuery||n(o.label).includes(commodityQuery)), out=[];
     if(chosen.length===1){
-      const item=chosen[0], quotes=[];
-      market.forEach(base=>{const good=rows(base).find(x=>key(x)===item.key);if(good)quotes.push({base,buyFromBase:sells(good),sellToBase:buys(good),stock:q(good)});});
+      const item=chosen[0], quotes=marketIndex.get(item.key)||[];
       const sourceOptions=quotes.filter(x=>x.buyFromBase!==null&&(x.stock===null||x.stock>0)).sort((a,b)=>bn(a.base).localeCompare(bn(b.base)));
       const destinationOptions=quotes.filter(x=>x.sellToBase!==null).sort((a,b)=>bn(a.base).localeCompare(bn(b.base)));
       if(!sourceOptions.some(x=>baseKey(x.base)===selectedSource))selectedSource='';
@@ -61,28 +64,24 @@
       return;
     }
     chosen.forEach(item=>{
-      const quotes=[];
-      market.forEach(b=>{
-        const good=rows(b).find(x=>key(x)===item.key);
-        if(!good)return;
-        quotes.push({base:b,buyFromBase:sells(good),sellToBase:buys(good),stock:q(good)});
+      const quotes=marketIndex.get(item.key)||[];
+      const destinations=quotes.filter(x=>x.sellToBase!==null).sort((a,b)=>b.sellToBase-a.sellToBase);
+      const sources=quotes.filter(x=>x.buyFromBase!==null);
+      const matchingDestinations=baseQuery?destinations.filter(x=>n([bn(x.base),loc(x.base)].join(' ')).includes(baseQuery)):destinations;
+      let best=null,hasPriceRoute=false;
+      sources.forEach(source=>{
+        const sourceKey=baseKey(source.base);
+        if(destinations.some(destination=>baseKey(destination.base)!==sourceKey))hasPriceRoute=true;
+        if(source.stock!==null&&source.stock<=0)return;
+        const sourceMatches=baseQuery&&n([bn(source.base),loc(source.base)].join(' ')).includes(baseQuery);
+        const candidates=baseQuery&&!sourceMatches?matchingDestinations:destinations;
+        const destination=candidates.find(candidate=>baseKey(candidate.base)!==sourceKey);
+        if(!destination)return;
+        const route={commodity:item.label,from:source.base,to:destination.base,buy:source.buyFromBase,sell:destination.sellToBase,margin:destination.sellToBase-source.buyFromBase,stock:source.stock};
+        if(!best||route.margin>best.margin)best=route;
       });
-      const routes=[];
-      quotes.forEach(from=>{
-        if(from.buyFromBase===null)return;
-        quotes.forEach(to=>{
-          if(baseKey(from.base)===baseKey(to.base)||to.sellToBase===null)return;
-          routes.push({commodity:item.label,from:from.base,to:to.base,buy:from.buyFromBase,sell:to.sellToBase,margin:to.sellToBase-from.buyFromBase,stock:from.stock});
-        });
-      });
-      routes.sort((a,b)=>b.margin-a.margin);
-      const baseMatches=x=>!baseQuery||n([bn(x.from),loc(x.from),bn(x.to),loc(x.to)].join(' ')).includes(baseQuery);
-      const available=routes.filter(x=>(x.stock===null||x.stock>0)&&baseMatches(x));
-      const profitable=available.filter(x=>x.margin>0);
-      const ranked=profitable.length?profitable:available;
-      const limit=(selected==='all'&&!baseQuery)?1:40;
-      if(!ranked.length){if(selected!=='all'||commodityQuery||baseQuery)out.push({commodity:item.label,unavailable:true,reason:routes.length?'No source base reports stock above zero.':'No matching two-sided prices are available.'});}
-      else out.push(...ranked.slice(0,limit));
+      if(!best){if(selected!=='all'||commodityQuery||baseQuery)out.push({commodity:item.label,unavailable:true,reason:hasPriceRoute?'No source base reports stock above zero.':'No matching two-sided prices are available.'});}
+      else out.push(best);
     });
     out.sort((a,b)=>(b.margin??-Infinity)-(a.margin??-Infinity));
     if(!out.length){results.innerHTML='<div class="trade-empty">No routes match those search terms. Try another commodity or base name.</div>';return;}
@@ -111,14 +110,14 @@
           });
         }
       }
-      if(id!==serial)return;market=[...pobs,...npc];marketLoaded=true;times.clear();status='MARKET UPDATED // '+pobs.length+' POBS + '+npc.length+' NPC BASES // '+opts().length+' COMMODITIES';paint();
-    }catch(e){if(id!==serial)return;status='NPC FEED UNAVAILABLE // USING POB QUOTES';try{const r=await fetch(API+'/pobs',{cache:'no-store',signal:AbortSignal.timeout(18000)});const data=await r.json();market=(Array.isArray(data)?data:(data.pobs||data.data||[])).map(b=>({...b,_dtrPob:true}));marketLoaded=true;paint();}catch{market=[];paint();}}
+      if(id!==serial)return;market=[...pobs,...npc];buildMarketIndex();marketLoaded=true;times.clear();status='MARKET UPDATED // '+pobs.length+' POBS + '+npc.length+' NPC BASES // '+opts().length+' COMMODITIES';paint();
+    }catch(e){if(id!==serial)return;status='NPC FEED UNAVAILABLE // USING POB QUOTES';try{const r=await fetch(API+'/pobs',{cache:'no-store',signal:AbortSignal.timeout(18000)});const data=await r.json();market=(Array.isArray(data)?data:(data.pobs||data.data||[])).map(b=>({...b,_dtrPob:true}));buildMarketIndex();marketLoaded=true;paint();}catch{market=[];paint();}}
   }
-  function sync(){const s=window.DTRApp?.getState?.();if(!s)return;host=hostFrom(s);if(!marketLoaded&&Array.isArray(s.data)&&s.data.length){market=s.data;status='LIVE FEED // '+market.length+' POBS';}paint();}
+  function sync(){const s=window.DTRApp?.getState?.();if(!s)return;host=hostFrom(s);if(!marketLoaded&&Array.isArray(s.data)&&s.data.length){market=s.data;buildMarketIndex();status='LIVE FEED // '+market.length+' POBS';}paint();}
   tabs.addEventListener('click',e=>{const tab=e.target.closest('.tab[data-view="trade-routes"]');if(!tab)return;document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='tradeRoutesView');tabs.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b===tab));sync();if(!market.length)void refresh();});
   panel.querySelector('#tradeCommodity').addEventListener('change',e=>{selected=e.target.value;selectedSource='';selectedDestination='';paint();});
   panel.querySelector('#tradeCommoditySearch').addEventListener('input',paint);
   panel.querySelector('#tradeBaseSearch').addEventListener('input',paint);
   panel.querySelector('#tradeRefresh').addEventListener('click',()=>{sync();void refresh();});
-  window.addEventListener('dtr:statechange',sync);sync();void refresh();
+  window.addEventListener('dtr:statechange',sync);sync();
 })();
