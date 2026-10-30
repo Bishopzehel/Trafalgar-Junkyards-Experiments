@@ -62,5 +62,5 @@
   tabs.addEventListener('click',e=>{const tab=e.target.closest('.tab[data-view="trade-routes"]');if(!tab)return;document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='tradeRoutesView');tabs.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b===tab));sync();if(!market.length)void refresh();});
   panel.querySelector('#tradeCommodity').addEventListener('change',e=>{selected=e.target.value;paint();});
   panel.querySelector('#tradeRefresh').addEventListener('click',()=>{sync();void refresh();});
-  window.addEventListener('dtr:statechange',sync);sync();if(!market.length)void refresh();
+  window.addEventListener('dtr:statechange',sync);sync();void refresh();
 })();
