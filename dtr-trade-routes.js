@@ -56,7 +56,7 @@
   async function refresh(){
     const id=++serial;status='REFRESHING MARKET…';paint();
     try{
-      const [pobResponse,baseResponse]=await Promise.all([fetch(API+'/pobs',{cache:'no-store',signal:AbortSignal.timeout(18000)}),fetch(API+'/bases',{cache:'no-store',signal:AbortSignal.timeout(18000)})]);
+      const [pobResponse,baseResponse]=await Promise.all([fetch(API+'/pobs',{cache:'no-store',signal:AbortSignal.timeout(18000)}),fetch(API+'/npc_bases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({}),cache:'no-store',signal:AbortSignal.timeout(18000)})]);
       if(!pobResponse.ok)throw Error('POB market HTTP '+pobResponse.status);
       const pobData=await pobResponse.json(), pobs=(Array.isArray(pobData)?pobData:(pobData.pobs||pobData.data||[])).map(b=>({...b,_dtrPob:true}));
       let npc=[];
