@@ -8,8 +8,8 @@
   const rows=b=>Array.isArray(b?.shop_items??b?.shopItems??b?.goods)?(b.shop_items??b.shopItems??b.goods):[];
   const nm=i=>String(i?.name??i?.good_name??i?.commodity_name??i?.nickname??i?.good??'Unknown');
   const key=i=>n(nm(i));
-  const buys=i=>i?.price_base_buys_for!==undefined?num(i.price_base_buys_for):num(i?.sell_price??i?.price_to_sell_to_base??i?.price_sell);
-  const sells=i=>i?.price_base_sells_for!==undefined?(i?.base_sells===false?null:num(i.price_base_sells_for)):num(i?.price??i?.price_to_buy_from_base??i?.buy_price??i?.price_buy);
+  const buys=i=>{const v=i?.price_base_buys_for!==undefined?num(i.price_base_buys_for):num(i?.sell_price??i?.price_to_sell_to_base??i?.price_sell);return v!==null&&v>0?v:null;};
+  const sells=i=>{const v=i?.price_base_sells_for!==undefined?(i?.base_sells===false?null:num(i.price_base_sells_for)):num(i?.price??i?.price_to_buy_from_base??i?.buy_price??i?.price_buy);return v!==null&&v>0?v:null;};
   const q=i=>num(i?.quantity??i?.amount??i?.stock);
   const bn=b=>String(b?.display_name??b?.name??b?.base_name??b?.nickname??'Unknown base');
   const loc=b=>[b?.region_name??b?.region,b?.system_name??b?.system].filter(Boolean).join(' / ')||'Location not reported';
